@@ -1,5 +1,5 @@
 [Unit]
-Description=RpiControl - web GUI to reboot/shutdown the Raspberry Pi
+Description=RpiControl - web GUI to reboot / shut down / update the Raspberry Pi
 After=network-online.target
 Wants=network-online.target
 

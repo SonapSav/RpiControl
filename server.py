@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""RpiControl - a tiny, dependency-free web server to reboot/shutdown a Raspberry Pi.
+"""RpiControl - a tiny, dependency-free web server to control a Raspberry Pi.
 
-Serves a small web GUI with Reboot / Shutdown buttons and exposes a JSON API
-guarded by a shared token. Uses only the Python standard library, so it runs on
-a stock Raspberry Pi OS (Trixie, 64-bit) with no pip installs.
+Serves a small web GUI with Reboot / Shut down / Run updates buttons and exposes
+a JSON API guarded by a shared token. Uses only the Python standard library, so
+it runs on a stock Raspberry Pi OS (Trixie, 64-bit) with no pip installs.
 
 Configuration (all optional, via environment variables):
-    RPICONTROL_TOKEN   Shared secret required for reboot/shutdown actions.
-                       If unset, a random token is generated and printed on start.
+    RPICONTROL_TOKEN   Shared secret required for reboot/shutdown/update actions
+                       and for reading status. If unset, a random token is
+                       generated and printed on start.
     RPICONTROL_PORT    TCP port to listen on (default: 8080).
     RPICONTROL_HOST    Interface to bind (default: 0.0.0.0 = all interfaces).
-    RPICONTROL_DELAY   Seconds to wait before the action runs (default: 5).
+    RPICONTROL_DELAY   Seconds to wait before a power action runs (default: 5).
                        Gives the browser time to show a confirmation and lets
                        you cancel via /api/cancel.
 """
@@ -22,7 +23,6 @@ import json
 import math
 import os
 import secrets
-import shutil
 import signal
 import socket
 import struct
@@ -43,10 +43,15 @@ DELAY = max(0, int(os.environ.get("RPICONTROL_DELAY", "5")))
 TOKEN = os.environ.get("RPICONTROL_TOKEN") or secrets.token_urlsafe(18)
 TOKEN_WAS_GENERATED = "RPICONTROL_TOKEN" not in os.environ
 
-# Locate the real binaries so we don't rely on PATH inside a systemd unit.
-SYSTEMCTL = shutil.which("systemctl") or "/usr/bin/systemctl"
-SUDO = shutil.which("sudo") or "/usr/bin/sudo"
-APT = shutil.which("apt-get") or "/usr/bin/apt-get"
+# IMPORTANT: these absolute paths MUST stay in lock-step with the command paths
+# allowed in rpicontrol-sudoers. sudo matches an allowed command by its exact
+# path, so we hardcode them here rather than resolving via PATH/shutil.which() -
+# a divergent path (e.g. /bin/systemctl vs /usr/bin/systemctl) would make sudo
+# deny the command. If you change one file, change the other.
+SUDO = "/usr/bin/sudo"
+SYSTEMCTL = "/usr/bin/systemctl"
+SHUTDOWN = "/sbin/shutdown"
+APT = "/usr/bin/apt-get"
 
 # A pending action is stored here so it can be cancelled before it fires.
 _pending_lock = threading.Lock()
@@ -65,7 +70,7 @@ def _run_power_action(action: str) -> None:
     # can run as an unprivileged user (see rpicontrol-sudoers).
     cmds = [
         [SUDO, "-n", SYSTEMCTL, verb],
-        [SUDO, "-n", "/sbin/shutdown", "-r" if action == "reboot" else "-h", "now"],
+        [SUDO, "-n", SHUTDOWN, "-r" if action == "reboot" else "-h", "now"],
     ]
     for cmd in cmds:
         try:
@@ -402,7 +407,12 @@ class Handler(BaseHTTPRequestHandler):
         return bool(supplied) and constant_time_equals(supplied, TOKEN)
 
     def log_message(self, fmt: str, *args) -> None:  # quieter, single-line logs
-        sys.stderr.write("[rpicontrol] %s - %s\n" % (self.address_string(), fmt % args))
+        # Never log query strings: a `?token=...` bookmark would otherwise write
+        # the secret into journald in clear text.
+        line = fmt % args
+        if self.path and "?" in self.path:
+            line = line.replace(self.path, self.path.split("?", 1)[0])
+        sys.stderr.write("[rpicontrol] %s - %s\n" % (self.address_string(), line))
 
     # ----- routes --------------------------------------------------------- #
     def do_GET(self) -> None:
@@ -410,6 +420,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/" or path == "/index.html":
             self._send_html(PAGE)
         elif path == "/api/status":
+            if not self._authorized():
+                self._send_json({"ok": False, "error": "unauthorized"}, status=401)
+                return
             self._send_json(status_payload())
         elif path == "/api/update/status":
             if not self._authorized():
@@ -504,7 +517,6 @@ PAGE = r"""<!doctype html>
     --accent-2: #4fc8bd;
     /* Status */
     --success: #63d68f;
-    --warn:    #f2c14e;
     --danger:  #ff6f6f;
     /* Type & shape */
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -705,7 +717,6 @@ PAGE = r"""<!doctype html>
     clock:     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     thermo:    '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
     download:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
-    cpu:       '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
   };
   function icon(name, size) {
     return '<svg class="ic" width="' + (size || 16) + '" height="' + (size || 16) + '" viewBox="0 0 24 24" ' +
@@ -724,15 +735,32 @@ PAGE = r"""<!doctype html>
   const tokenEl = $("token"), rememberEl = $("remember"), msgEl = $("msg");
   const KEY = "rpicontrol_token";
 
-  const urlToken = new URLSearchParams(location.search).get("token");
+  const params = new URLSearchParams(location.search);
+  const urlToken = params.get("token");
   tokenEl.value = urlToken || localStorage.getItem(KEY) || "";
+  // Don't leave the token sitting in the address bar / history if it arrived
+  // via ?token=... — read it once, then scrub it from the URL.
+  if (urlToken) {
+    params.delete("token");
+    const qs = params.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+  }
 
   function token() { return tokenEl.value.trim(); }
   function saveToken() {
     if (rememberEl.checked && token()) localStorage.setItem(KEY, token());
     else localStorage.removeItem(KEY);
   }
-  function say(html, kind) { msgEl.innerHTML = html; msgEl.className = "msg " + (kind || ""); }
+  function say(text, kind, spinner) {
+    msgEl.className = "msg " + (kind || "");
+    msgEl.textContent = "";
+    if (spinner) {
+      const sp = document.createElement("span");
+      sp.className = "spinner";
+      msgEl.appendChild(sp);
+    }
+    if (text) msgEl.appendChild(document.createTextNode(text));
+  }
 
   async function api(path, opts) {
     const res = await fetch(path, Object.assign({
@@ -746,13 +774,16 @@ PAGE = r"""<!doctype html>
   }
 
   async function refresh() {
+    if (!token()) return;  // status requires the token
     try {
-      const s = await fetch("/api/status").then(r => r.json());
+      const res = await fetch("/api/status", { headers: { "X-Auth-Token": token() } });
+      if (!res.ok) return;
+      const s = await res.json();
       $("host").textContent = s.hostname || "Raspberry Pi";
       $("uptime").textContent = s.uptime_human || "-";
       $("temp").textContent = (s.cpu_temp_c != null) ? s.cpu_temp_c + " °C" : "-";
       $("btnCancel").hidden = !s.pending;
-      if (s.pending) say('<span class="spinner"></span>' + s.pending + " in progress — you can still cancel", "info");
+      if (s.pending) say(s.pending + " in progress — you can still cancel", "info", true);
     } catch (e) { /* ignore transient errors */ }
   }
 
@@ -808,7 +839,7 @@ PAGE = r"""<!doctype html>
         const st = await updateStatus();
         renderUpdate(st);
         if (st.state === "running") {
-          say('<span class="spinner"></span>Installing updates — this can take a few minutes', "info");
+          say("Installing updates — this can take a few minutes", "info", true);
           await new Promise(r => setTimeout(r, 1500));
           continue;
         }
@@ -827,7 +858,7 @@ PAGE = r"""<!doctype html>
     try {
       const r = await api("/api/update");
       if (!r.ok) { say(r.error || "Failed to start updates", "err"); return; }
-      say('<span class="spinner"></span>Starting updates…', "info");
+      say("Starting updates…", "info", true);
       pollUpdate();
     } catch (e) { say(e.message, "err"); }
   };
@@ -840,6 +871,9 @@ PAGE = r"""<!doctype html>
       if (st.state === "running") { renderUpdate(st); pollUpdate(); }
     } catch (e) { /* ignore */ }
   })();
+
+  // Status needs the token, so refresh as soon as one is entered/changed.
+  tokenEl.addEventListener("change", refresh);
 
   refresh();
   setInterval(refresh, 5000);
@@ -854,7 +888,19 @@ PAGE = r"""<!doctype html>
 # Entry point
 # --------------------------------------------------------------------------- #
 
+def _prewarm_icons() -> None:
+    for size in ICON_SIZES:
+        try:
+            power_icon_png(size)
+        except Exception:  # noqa: BLE001 - best-effort cache warming
+            pass
+
+
 def main() -> None:
+    # Render the app icons up front, off the request path, so the first PWA
+    # install doesn't wait on a CPU-bound render.
+    threading.Thread(target=_prewarm_icons, daemon=True).start()
+
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
 
     def shutdown_handler(signum, frame):

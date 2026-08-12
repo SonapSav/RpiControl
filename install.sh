@@ -49,13 +49,18 @@ else
 fi
 
 echo "==> Installing sudoers rule"
+# Validate BEFORE putting it live: a malformed file in /etc/sudoers.d/ makes
+# sudo refuse to run at all, which could lock you out of privilege escalation.
+visudo -cf "$SRC_DIR/rpicontrol-sudoers"
 install -o root -g root -m 0440 "$SRC_DIR/rpicontrol-sudoers" "$SUDOERS"
-visudo -cf "$SUDOERS"
 
 echo "==> Installing systemd service"
 install -o root -g root -m 0644 "$SRC_DIR/rpicontrol.service" "$SERVICE"
 systemctl daemon-reload
-systemctl enable --now rpicontrol.service
+systemctl enable rpicontrol.service
+# `enable --now` does NOT restart an already-running unit, so restart explicitly
+# to pick up a new server.py when re-running the installer to upgrade.
+systemctl restart rpicontrol.service
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo

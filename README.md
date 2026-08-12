@@ -108,8 +108,14 @@ The page is an installable PWA — pin it and it launches fullscreen with the am
 | Platform | How |
 |----------|-----|
 | **iPhone / iPad** (Safari) | Share → **Add to Home Screen** |
-| **Android** (Chrome) | ⋮ menu → **Install app** / **Add to Home screen** |
+| **Android** (Chrome) | ⋮ menu → **Add to Home screen** |
 | **Desktop** (Chrome / Edge) | Install icon in the address bar |
+
+> ℹ️ **iOS** installs as a fullscreen app over plain HTTP on your LAN. **Android
+> Chrome and desktop browsers only offer full PWA install (standalone launch)
+> over a secure context** — i.e. HTTPS or `localhost`. Over a plain-HTTP LAN
+> address you'll get a regular shortcut instead. To get the full install on
+> Android, front RpiControl with HTTPS (e.g. a **Tailscale**/reverse-proxy URL).
 
 ---
 
@@ -177,14 +183,15 @@ sudo systemctl restart rpicontrol
 
 ## 🔌 HTTP API
 
-All action endpoints require the header `X-Auth-Token: <token>`.
+Endpoints marked ✅ require the header `X-Auth-Token: <token>`.
 
 | Method | Path | Auth | Description |
 |--------|------|:----:|-------------|
 | `GET`  | `/` | — | The web GUI. |
-| `GET`  | `/api/status` | — | Hostname, uptime, CPU temp, pending action. |
+| `GET`  | `/healthz` | — | Liveness check (`{"ok": true}`). |
 | `GET`  | `/manifest.webmanifest` | — | PWA manifest. |
 | `GET`  | `/icon-{180,192,512}.png` | — | Generated app icons. |
+| `GET`  | `/api/status` | ✅ | Hostname, uptime, CPU temp, pending action. |
 | `POST` | `/api/reboot` | ✅ | Schedule a reboot after `DELAY`s. |
 | `POST` | `/api/shutdown` | ✅ | Schedule a shutdown after `DELAY`s. |
 | `POST` | `/api/cancel` | ✅ | Cancel a pending power action. |
