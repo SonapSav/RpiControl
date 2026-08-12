@@ -1,0 +1,14 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+
+# Scratch / previews (temporary artifacts, never committed)
+_preview.html
+_icon*.png
+*.tmp

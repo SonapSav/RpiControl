@@ -1,0 +1,16 @@
+# Normalize to LF in the repo and on checkout everywhere. This project's shell
+# scripts, systemd unit and sudoers file are deployed to Linux (the Raspberry
+# Pi); CRLF line endings would break them, so LF is enforced regardless of the
+# committer's OS.
+* text=auto eol=lf
+
+# Explicit for the files that must be LF to run on the Pi.
+*.sh            text eol=lf
+*.py            text eol=lf
+*.service       text eol=lf
+rpicontrol-sudoers text eol=lf
+.githooks/*     text eol=lf
+
+# Generated/binary assets (none tracked today, but keep git from mangling them).
+*.png binary
+*.ico binary

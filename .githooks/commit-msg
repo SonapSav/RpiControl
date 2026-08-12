@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# commit-msg hook — enforce the project's commit-authorship standard.
+#
+# Every commit (yours or a tool's) gets the canonical co-author trailer
+# appended if it is not already present:
+#
+#     Co-authored-by: Claude Opus 4.8 <noreply@anthropic.com>
+#
+# The author identity itself is pinned per-repo via `git config user.name`
+# / `user.email` (see README). The co-author value is read from git config
+# `commit.coAuthor`, so it stays configurable without editing this script.
+#
+# This hook is idempotent: re-running it never duplicates the trailer, and an
+# existing identical trailer is left untouched.
+
+set -eu
+
+msg_file="$1"
+[ -f "$msg_file" ] || exit 0
+
+# Resolve the co-author (fall back to the project default if unset).
+coauthor="$(git config --get commit.coAuthor || true)"
+[ -n "$coauthor" ] || coauthor="Claude Opus 4.8 <noreply@anthropic.com>"
+
+# `git interpret-trailers` places the trailer correctly (blank-line separated,
+# before any trailing comment block) and, with addIfDifferent, adds it only
+# when that exact trailer is not already there — so no duplicates.
+git interpret-trailers \
+    --in-place \
+    --if-exists addIfDifferent \
+    --trailer "Co-authored-by: $coauthor" \
+    "$msg_file"

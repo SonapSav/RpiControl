@@ -1,0 +1,9 @@
+# RpiControl: let the unprivileged service user power the machine off/on
+# without a password. Install to /etc/sudoers.d/rpicontrol (mode 0440).
+#
+#   sudo install -m 0440 rpicontrol-sudoers /etc/sudoers.d/rpicontrol
+#   sudo visudo -c        # validate syntax
+#
+# Only these exact commands are allowed - nothing else.
+# The two apt-get lines back the "Run updates" button.
+rpicontrol ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /sbin/shutdown -r now, /sbin/shutdown -h now, /usr/bin/apt-get update, /usr/bin/apt-get -y full-upgrade

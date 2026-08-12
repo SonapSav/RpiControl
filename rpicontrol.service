@@ -1,0 +1,29 @@
+[Unit]
+Description=RpiControl - web GUI to reboot/shutdown the Raspberry Pi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rpicontrol
+Group=rpicontrol
+# Read RPICONTROL_TOKEN (and optional PORT/HOST/DELAY) from this file.
+EnvironmentFile=/etc/rpicontrol.env
+ExecStart=/usr/bin/python3 /opt/rpicontrol/server.py
+Restart=on-failure
+RestartSec=2
+
+# --- Hardening -------------------------------------------------------------
+# Kept intentionally light: the "Run updates" button runs apt-get as root (via
+# the narrow sudoers rule), which needs to write across the filesystem - so the
+# namespace-based protections (ProtectSystem/ProtectHome) are NOT used here, as
+# they would also constrain the sudo'd child and break apt. The real privilege
+# boundary is /etc/sudoers.d/rpicontrol, which allows only reboot/poweroff and
+# those two apt-get commands.
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectControlGroups=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
