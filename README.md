@@ -195,7 +195,7 @@ Endpoints marked ✅ require the header `X-Auth-Token: <token>`.
 | `POST` | `/api/reboot` | ✅ | Schedule a reboot after `DELAY`s. |
 | `POST` | `/api/shutdown` | ✅ | Schedule a shutdown after `DELAY`s. |
 | `POST` | `/api/cancel` | ✅ | Cancel a pending power action. |
-| `POST` | `/api/update` | ✅ | Start `apt-get update && apt-get upgrade -y`. |
+| `POST` | `/api/update` | ✅ | Start `apt-get update && apt-get --with-new-pkgs upgrade -y`. |
 | `GET`  | `/api/update/status` | ✅ | Update state + streamed log lines. |
 
 ```bash
@@ -221,7 +221,7 @@ sudo systemctl disable --now rpicontrol   # stop & don't start on boot
   behind a VPN (e.g. **WireGuard / Tailscale**) or a reverse proxy with TLS + auth. Don't
   port-forward it to the internet.
 - **Least privilege.** The `rpicontrol` user can run *only* `systemctl reboot|poweroff`,
-  `shutdown -r|-h now`, `apt-get update`, and `apt-get upgrade -y` via `sudo` — nothing
+  `shutdown -r|-h now`, `apt-get update`, and `apt-get --with-new-pkgs upgrade -y` via `sudo` — nothing
   else. The sudoers allowlist is the privilege boundary.
 - **Keep the token private.** `/etc/rpicontrol.env` is installed mode `0640` (root + rpicontrol).
 

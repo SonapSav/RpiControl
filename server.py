@@ -139,13 +139,14 @@ def _log(line: str) -> None:
 
 
 def _run_update() -> None:
-    """Run apt-get update && apt-get upgrade -y, streaming output into the log."""
+    """Run apt-get update && apt-get --with-new-pkgs upgrade -y, streamed to log."""
     env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
-    # Plain `upgrade` (not full-upgrade/dist-upgrade): it never removes or holds
-    # back installed packages to satisfy dependencies.
+    # `--with-new-pkgs upgrade` upgrades packages, including ones held back
+    # because they need a NEW dependency installed, but (unlike full-upgrade /
+    # dist-upgrade) never REMOVES an installed package to resolve dependencies.
     steps = [
         [SUDO, "-n", APT, "update"],
-        [SUDO, "-n", APT, "upgrade", "-y"],
+        [SUDO, "-n", APT, "--with-new-pkgs", "upgrade", "-y"],
     ]
     rc = 0
     for cmd in steps:
@@ -855,7 +856,7 @@ PAGE = r"""<!doctype html>
 
   btnUpdate.onclick = async () => {
     if (!token()) { say("Enter the access token first", "err"); return; }
-    if (!confirm("Run system updates now?\n\napt-get update && apt-get upgrade -y — this can take several minutes and must not be interrupted.")) return;
+    if (!confirm("Run system updates now?\n\napt-get update && apt-get --with-new-pkgs upgrade -y — this can take several minutes and must not be interrupted.")) return;
     saveToken();
     try {
       const r = await api("/api/update");
