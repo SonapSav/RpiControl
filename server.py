@@ -139,11 +139,13 @@ def _log(line: str) -> None:
 
 
 def _run_update() -> None:
-    """Run apt-get update && full-upgrade, streaming output into the log."""
+    """Run apt-get update && apt-get upgrade -y, streaming output into the log."""
     env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    # Plain `upgrade` (not full-upgrade/dist-upgrade): it never removes or holds
+    # back installed packages to satisfy dependencies.
     steps = [
         [SUDO, "-n", APT, "update"],
-        [SUDO, "-n", APT, "-y", "full-upgrade"],
+        [SUDO, "-n", APT, "upgrade", "-y"],
     ]
     rc = 0
     for cmd in steps:
@@ -853,7 +855,7 @@ PAGE = r"""<!doctype html>
 
   btnUpdate.onclick = async () => {
     if (!token()) { say("Enter the access token first", "err"); return; }
-    if (!confirm("Run system updates now?\n\napt-get update && full-upgrade — this can take several minutes and must not be interrupted.")) return;
+    if (!confirm("Run system updates now?\n\napt-get update && apt-get upgrade -y — this can take several minutes and must not be interrupted.")) return;
     saveToken();
     try {
       const r = await api("/api/update");

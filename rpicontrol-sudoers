@@ -9,4 +9,4 @@
 # NOTE: these command paths MUST match the absolute paths hardcoded in
 # server.py (SUDO/SYSTEMCTL/SHUTDOWN/APT). sudo matches by exact path, so if you
 # change a path in one file, change it in the other.
-rpicontrol ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /sbin/shutdown -r now, /sbin/shutdown -h now, /usr/bin/apt-get update, /usr/bin/apt-get -y full-upgrade
+rpicontrol ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /sbin/shutdown -r now, /sbin/shutdown -h now, /usr/bin/apt-get update, /usr/bin/apt-get upgrade -y
